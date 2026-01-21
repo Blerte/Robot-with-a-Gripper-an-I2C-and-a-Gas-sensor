@@ -1,0 +1,102 @@
+// ===== MOTOR PINOUT =====
+const int ENA = 5, IN1 = 6, IN2 = 7;
+const int ENB = 9, IN3 = 10, IN4 = 11;
+
+// ===== IR SENSORS =====
+const int IR_L = 2;
+const int IR_R = 3;
+
+// ===== LINE VALUE =====
+const int LINE = 1;
+
+// ===== SPEED SETTINGS =====
+const int BASE_SPEED = 80;
+const int TURN_DIFF  = 18;
+
+// ===== STATE FLAG =====
+bool turning = false;
+
+// ===== COUNTER =====
+int bothBlackCount = 0;
+
+// ===== BASIC MOTION =====
+void setForward() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+}
+
+void move(int leftSpeed, int rightSpeed) {
+  setForward();
+  analogWrite(ENA, constrain(leftSpeed, 0, 255));
+  analogWrite(ENB, constrain(rightSpeed, 0, 255));
+}
+
+void stopM() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+}
+
+// ===== TURN AROUND =====
+void turnAround() {
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+
+  analogWrite(ENA, BASE_SPEED);
+  analogWrite(ENB, BASE_SPEED);
+
+  delay(650);   // tune for 180°
+  stopM();
+}
+
+// ===== LINE FOLLOW =====
+void followLine() {
+  int L = digitalRead(IR_L);
+  int R = digitalRead(IR_R);
+
+  // ===== BOTH BLACK DETECTION =====
+  if (L == LINE && R == LINE) {
+    bothBlackCount++;
+  } else {
+    bothBlackCount = 0;
+  }
+
+  // ===== TRIGGER TURN =====
+  if (bothBlackCount >= 5) {
+    bothBlackCount = 0;
+    turning = true;
+    stopM();
+    return;
+  }
+
+  // ===== LINE FOLLOW LOGIC =====
+  if (L == LINE && R != LINE) {
+    move(BASE_SPEED - TURN_DIFF, BASE_SPEED + TURN_DIFF);
+  }
+  else if (L != LINE && R == LINE) {
+    move(BASE_SPEED + TURN_DIFF, BASE_SPEED - TURN_DIFF);
+  }
+  else {
+    move(BASE_SPEED, BASE_SPEED);
+  }
+}
+
+// ===== SETUP =====
+void setup() {
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(IR_L, INPUT);
+  pinMode(IR_R, INPUT);
+}
+
+// ===== LOOP =====
+void loop() {
+  if (turning) {
+    turnAround();
+    turning = false;
+  } else {
+    followLine();
+  }
+
+  delay(5);
+}
+
