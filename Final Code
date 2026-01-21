@@ -1,0 +1,142 @@
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ===== MOTOR PINOUT =====
+const int ENA = 5, IN1 = 6, IN2 = 7;
+const int ENB = 9, IN3 = 10, IN4 = 11;
+
+// ===== IR SENSORS =====
+const int IR_L = 2;
+const int IR_R = 3;
+
+// ===== LINE VALUE =====
+const int LINE = 1;
+
+// ===== SPEED SETTINGS =====
+const int BASE_SPEED = 80;
+const int TURN_DIFF  = 18;
+
+// ===== GRIPPER =====
+Servo gripper;
+const int GRIP_PIN   = 4;
+const int GRIP_OPEN  = 30;
+const int GRIP_CLOSE = 90;
+
+// ===== LCD & GAS =====
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+const int GAS_PIN = A0;
+
+// ===== STATE =====
+enum State { FOLLOW, TURN, STOP };
+State state = FOLLOW;
+
+int bothBlackCount = 0;
+int stopCount = 0;
+
+// ===== BASIC MOTION =====
+void setMotor(int leftSpeed, int rightSpeed, bool forward = true) {
+  digitalWrite(IN1, forward);
+  digitalWrite(IN2, !forward);
+  digitalWrite(IN3, forward);
+  digitalWrite(IN4, !forward);
+  analogWrite(ENA, constrain(leftSpeed, 0, 255));
+  analogWrite(ENB, constrain(rightSpeed, 0, 255));
+}
+
+void stopM() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+}
+
+void turnAround() {
+  setMotor(BASE_SPEED, BASE_SPEED, false);  // reverse
+  delay(650);
+  stopM();
+}
+
+// ===== GRIPPER =====
+void grip(bool close) {
+  gripper.write(close ? GRIP_CLOSE : GRIP_OPEN);
+}
+
+// ===== GAS STATUS =====
+int readGas() {
+  return analogRead(GAS_PIN);
+}
+
+String gasStatus(int val) {
+  if (val < 300) return "OK";
+  if (val < 600) return "WARN";
+  return "DANGER";
+}
+
+// ===== LCD UPDATE =====
+void updateLCD(int gasVal) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Gas:");
+  lcd.print(gasVal);
+  lcd.print(" ");
+  lcd.print(gasStatus(gasVal));
+
+  lcd.setCursor(0, 1);
+  if (state == FOLLOW) lcd.print("State: FOLLOW");
+  else if (state == TURN) lcd.print("State: TURN  ");
+  else lcd.print("State: STOP  ");
+}
+
+// ===== LINE FOLLOW =====
+void followLine() {
+  int L = digitalRead(IR_L);
+  int R = digitalRead(IR_R);
+
+  if (L == LINE && R == LINE) bothBlackCount++;
+  else bothBlackCount = 0;
+
+  if (bothBlackCount >= 5) {
+    bothBlackCount = 0;
+    stopM();
+    stopCount++;
+
+    if (stopCount == 1) {
+      grip(true);        // grab
+      state = TURN;
+    } else {
+      grip(false);       // release
+      state = STOP;
+    }
+    return;
+  }
+
+  if (L == LINE && R != LINE) setMotor(BASE_SPEED - TURN_DIFF, BASE_SPEED + TURN_DIFF);
+  else if (L != LINE && R == LINE) setMotor(BASE_SPEED + TURN_DIFF, BASE_SPEED - TURN_DIFF);
+  else setMotor(BASE_SPEED, BASE_SPEED);
+}
+
+// ===== SETUP =====
+void setup() {
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(IR_L, INPUT); pinMode(IR_R, INPUT);
+
+  gripper.attach(GRIP_PIN);
+  grip(false); // start open
+
+  lcd.init();
+  lcd.backlight();
+}
+
+// ===== LOOP =====
+void loop() {
+  int gasVal = readGas();
+  updateLCD(gasVal);
+
+  if (state == FOLLOW) followLine();
+  else if (state == TURN) {
+    turnAround();
+    state = FOLLOW;
+  }
+
+  delay(5);
+}
