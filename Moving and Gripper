@@ -1,0 +1,127 @@
+#include <Servo.h>
+
+// ===== MOTOR PINOUT =====
+const int ENA = 5, IN1 = 6, IN2 = 7;
+const int ENB = 9, IN3 = 10, IN4 = 11;
+
+// ===== IR SENSORS =====
+const int IR_L = 2;
+const int IR_R = 3;
+
+// ===== LINE VALUE =====
+const int LINE = 1;
+
+// ===== SPEED SETTINGS =====
+const int BASE_SPEED = 80;
+const int TURN_DIFF  = 18;
+
+// ===== GRIPPER =====
+Servo gripper;
+const int GRIPPER_PIN = 4;
+const int GRIP_OPEN  = 30;
+const int GRIP_CLOSE = 90;
+
+// ===== ROBOT STATE =====
+enum State { FOLLOW, TURN, STOP };
+State state = FOLLOW;
+
+int bothBlackCount = 0;
+int stopCount = 0;
+
+// ===== BASIC MOTION =====
+void setForward() {
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+}
+
+void move(int leftSpeed, int rightSpeed) {
+  setForward();
+  analogWrite(ENA, constrain(leftSpeed, 0, 255));
+  analogWrite(ENB, constrain(rightSpeed, 0, 255));
+}
+
+void stopM() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+}
+
+// ===== GRIPPER =====
+void gripOpen()  { gripper.write(GRIP_OPEN);  }
+void gripClose() { gripper.write(GRIP_CLOSE); }
+
+// ===== TURN AROUND =====
+void turnAround() {
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+
+  analogWrite(ENA, BASE_SPEED);
+  analogWrite(ENB, BASE_SPEED);
+
+  delay(650);   // tune for 180°
+  stopM();
+}
+
+// ===== HANDLE BOTH BLACK =====
+void handleStop() {
+  stopM();
+  stopCount++;
+
+  if (stopCount == 1) {
+    gripClose();      // grab
+    delay(400);
+    state = TURN;
+  }
+  else {
+    gripOpen();       // release
+    state = STOP;
+  }
+}
+
+// ===== LINE FOLLOW =====
+void followLine() {
+  int L = digitalRead(IR_L);
+  int R = digitalRead(IR_R);
+
+  // both black confirmation
+  if (L == LINE && R == LINE) bothBlackCount++;
+  else bothBlackCount = 0;
+
+  if (bothBlackCount >= 5) {
+    bothBlackCount = 0;
+    handleStop();
+    return;
+  }
+
+  // line logic
+  if (L == LINE && R != LINE)
+    move(BASE_SPEED - TURN_DIFF, BASE_SPEED + TURN_DIFF);
+  else if (L != LINE && R == LINE)
+    move(BASE_SPEED + TURN_DIFF, BASE_SPEED - TURN_DIFF);
+  else
+    move(BASE_SPEED, BASE_SPEED);
+}
+
+// ===== SETUP =====
+void setup() {
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(IR_L, INPUT);
+  pinMode(IR_R, INPUT);
+
+  gripper.attach(GRIPPER_PIN);
+  gripOpen();   // start open
+}
+
+// ===== LOOP =====
+void loop() {
+  if (state == FOLLOW) {
+    followLine();
+  }
+  else if (state == TURN) {
+    turnAround();
+    state = FOLLOW;
+  }
+  // STOP state → do nothing
+
+  delay(5);
+}
